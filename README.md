@@ -1164,7 +1164,7 @@ permissions:
 
 ***
 
-## Part 11: Practice Exercises
+## Part 11: Practice Exercises (Optional)
 
 ### Exercise 1: Basic Setup (30 minutes)
 
