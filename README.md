@@ -1,1 +1,1507 @@
-# Practice_SAST_SCA_DAST
+# Complete Security Scanning Guide for Beginners
+
+## SAST + SCA + DAST with GitHub Actions
+
+
+***
+
+## 📚 Table of Contents
+
+1. [Introduction - Understanding Security Scanning](#part-1-introduction)
+2. [Prerequisites](#part-2-prerequisites)
+3. [Project Setup - Calculator Web App](#part-3-project-setup)
+4. [SAST Setup - Snyk Code Scanning](#part-4-sast-setup)
+5. [SCA Setup - Dependency Checking](#part-5-sca-setup)
+6. [DAST Setup - Live Application Scanning](#part-6-dast-setup)
+7. [Complete Integrated Workflow](#part-7-complete-workflow)
+8. [Testing Everything](#part-8-testing)
+9. [Understanding Results](#part-9-understanding-results)
+10. [Troubleshooting](#part-10-troubleshooting)
+11. [Practice Exercises](#part-11-practice-exercises)
+
+***
+
+## Part 1: Introduction - Understanding Security Scanning
+
+### What Are We Building?
+
+A **complete security scanning pipeline** that automatically checks your code for vulnerabilities using three different types of scans:
+
+### The Three Types of Security Scans
+
+| Scan Type | What It Does | When It Runs | Example Issues Found |
+| :-- | :-- | :-- | :-- |
+| **SAST** (Static Application Security Testing) | Scans your source code without running it | Before deployment | SQL injection, XSS vulnerabilities, hardcoded secrets |
+| **SCA** (Software Composition Analysis) | Checks your dependencies (libraries/packages) for known vulnerabilities | Before deployment | Outdated packages with CVEs, insecure dependencies |
+| **DAST** (Dynamic Application Security Testing) | Tests your running application by simulating attacks | After deployment | Runtime vulnerabilities, configuration issues, injection flaws |
+
+### The Security Pipeline Flow
+
+```
+1. You push code
+   ↓
+2. SAST scans your source code (Snyk)
+   ↓
+3. SCA checks your dependencies (OWASP Dependency-Check)
+   ↓
+4. Application builds and runs
+   ↓
+5. DAST tests the running app (OWASP ZAP)
+   ↓
+6. Reports sent to GitHub Security tab
+```
+
+
+### Why All Three?
+
+- **SAST** finds code-level issues (what you wrote)
+- **SCA** finds library issues (what you imported)
+- **DAST** finds runtime issues (what actually happens)
+
+Think of it like a car inspection:
+
+- **SAST** = Checking the engine design
+- **SCA** = Checking the parts you bought
+- **DAST** = Test driving the car
+
+***
+
+## Part 2: Prerequisites
+
+### What You Need
+
+✅ GitHub account
+✅ Basic Git knowledge
+✅ Text editor (VS Code recommended)
+✅ No prior security experience needed!
+
+### Accounts to Create
+
+1. **Snyk Account** (for SAST)
+    - Sign up at [https://snyk.io](https://snyk.io)
+    - Free for personal projects
+2. **GitHub Account** (you already have this!)
+
+### Time Required
+
+- Initial setup: 30-45 minutes
+- Each practice exercise: 15-20 minutes
+
+***
+
+## Part 3: Project Setup - Calculator Web App
+
+We'll create a simple calculator web application that we can scan for security issues.
+
+### Step 3.1: Create Project Structure
+
+Create a new folder with this structure:
+
+```
+calculator-security-demo/
+├── app.py                    # Flask web application
+├── requirements.txt          # Python dependencies
+├── templates/
+│   └── index.html           # Web interface
+├── Dockerfile               # Container configuration
+└── .github/
+    └── workflows/
+        ├── 1-sast-only.yml         # SAST scan only
+        ├── 2-sca-only.yml          # SCA scan only
+        ├── 3-dast-only.yml         # DAST scan only
+        └── 4-complete-security.yml # All three scans
+```
+
+
+### Step 3.2: Create `app.py`
+
+```python
+# Simple Flask Calculator Application
+from flask import Flask, render_template, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    """Render the calculator homepage"""
+    return render_template('index.html')
+
+@app.route('/calculate', methods=['POST'])
+def calculate():
+    """Perform calculation based on user input"""
+    try:
+        data = request.get_json()
+        num1 = float(data['num1'])
+        num2 = float(data['num2'])
+        operation = data['operation']
+        
+        if operation == 'add':
+            result = num1 + num2
+        elif operation == 'subtract':
+            result = num1 - num2
+        elif operation == 'multiply':
+            result = num1 * num2
+        elif operation == 'divide':
+            if num2 == 0:
+                return jsonify({'error': 'Cannot divide by zero'}), 400
+            result = num1 / num2
+        else:
+            return jsonify({'error': 'Invalid operation'}), 400
+        
+        return jsonify({'result': result})
+    
+    except (ValueError, KeyError) as e:
+        return jsonify({'error': 'Invalid input'}), 400
+
+if __name__ == '__main__':
+    # Note: debug=False in production
+    app.run(host='0.0.0.0', port=5000, debug=True)
+```
+
+
+### Step 3.3: Create `templates/index.html`
+
+Create a `templates` folder and add `index.html`:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .calculator {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 48%;
+            padding: 10px;
+            margin: 5px 1%;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e8f5e9;
+            border-radius: 4px;
+            font-size: 20px;
+            text-align: center;
+        }
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+    </style>
+</head>
+<body>
+    <div class="calculator">
+        <h1>Simple Calculator</h1>
+        <input type="number" id="num1" placeholder="Enter first number" step="any">
+        <input type="number" id="num2" placeholder="Enter second number" step="any">
+        
+        <button onclick="calculate('add')">Add (+)</button>
+        <button onclick="calculate('subtract')">Subtract (-)</button>
+        <button onclick="calculate('multiply')">Multiply (×)</button>
+        <button onclick="calculate('divide')">Divide (÷)</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function calculate(operation) {
+            const num1 = document.getElementById('num1').value;
+            const num2 = document.getElementById('num2').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!num1 || !num2) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = 'Please enter both numbers';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/calculate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        num1: parseFloat(num1),
+                        num2: parseFloat(num2),
+                        operation: operation
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.className = '';
+                    resultDiv.textContent = `Result: ${data.result}`;
+                } else {
+                    resultDiv.className = 'error';
+                    resultDiv.textContent = `Error: ${data.error}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'error';
+                resultDiv.textContent = 'Connection error';
+            }
+        }
+    </script>
+</body>
+</html>
+```
+
+
+### Step 3.4: Create `requirements.txt`
+
+```txt
+flask==2.0.1
+werkzeug==2.0.1
+```
+
+**Note:** These are intentionally older versions with known vulnerabilities so we can see the scanners find them!
+
+### Step 3.5: Create `Dockerfile`
+
+```dockerfile
+# Use Python 3.9 slim image
+FROM python:3.9-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application files
+COPY app.py .
+COPY templates/ templates/
+
+# Expose port 5000
+EXPOSE 5000
+
+# Run the application
+CMD ["python", "app.py"]
+```
+
+
+### Step 3.6: Initialize Git Repository
+
+```bash
+# Navigate to your project folder
+cd calculator-security-demo
+
+# Initialize git
+git init
+
+# Create .gitignore
+echo "__pycache__/" > .gitignore
+echo "*.pyc" >> .gitignore
+echo ".pytest_cache/" >> .gitignore
+
+# Add all files
+git add .
+
+# First commit
+git commit -m "Initial commit: Calculator web app"
+```
+
+
+***
+
+## Part 4: SAST Setup - Snyk Code Scanning
+
+### What Is SAST?
+
+**SAST (Static Application Security Testing)** analyzes your source code to find security vulnerabilities without running the application.
+
+**Snyk** will scan for:
+
+- Code injection vulnerabilities
+- Hardcoded secrets
+- Insecure configurations
+- Poor coding practices
+
+
+### Step 4.1: Get Snyk API Token
+
+1. Go to [https://snyk.io](https://snyk.io) and log in
+2. Click your **profile icon** (top right) → **Account Settings**
+3. Scroll to **General** section
+4. Copy your **API Token**
+
+### Step 4.2: Add Snyk Token to GitHub
+
+1. Go to your GitHub repository
+2. Click **Settings** → **Secrets and variables** → **Actions**
+3. Click **New repository secret**
+4. Name: `SNYK_TOKEN`
+5. Value: Paste your Snyk API token
+6. Click **Add secret**
+
+### Step 4.3: Create SAST Workflow
+
+Create `.github/workflows/1-sast-only.yml`:
+
+```yaml
+# SAST (Static Application Security Testing) with Snyk
+name: 1. SAST - Code Security Scan
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  security-events: write  # Required for SARIF upload
+
+jobs:
+  sast:
+    name: Snyk Code Scan (SAST)
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      
+      # Step 4: Run Snyk Code Scan
+      - name: Run Snyk to check code for vulnerabilities
+        continue-on-error: true
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code test
+          args: --sarif-file-output=snyk-code.sarif
+      
+      # Step 5: Upload results to GitHub Security
+      - name: Upload SAST results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk-code.sarif
+          category: sast
+```
+
+
+### Understanding the SAST Workflow
+
+**Trigger (`on:`)**: Runs on push and pull requests to main/master
+
+**Key Steps**:
+
+1. **Checkout code**: Downloads your repository
+2. **Set up Python**: Installs Python environment
+3. **Install dependencies**: Installs packages from requirements.txt
+4. **Run Snyk scan**: Analyzes code for vulnerabilities
+5. **Upload results**: Sends findings to GitHub Security tab
+
+**Important Configurations**:
+
+- `command: code test` → Specifically scans your source code (SAST)
+- `--sarif-file-output` → Creates standardized security report
+- `continue-on-error: true` → Workflow continues even if vulnerabilities found
+- `if: always()` → Upload results regardless of scan outcome
+
+***
+
+## Part 5: SCA Setup - Dependency Checking
+
+### What Is SCA?
+
+**SCA (Software Composition Analysis)** checks your project dependencies (libraries and packages) for known security vulnerabilities.
+
+**OWASP Dependency-Check** will scan for:
+
+- Outdated dependencies with CVEs
+- Known vulnerable packages
+- License compliance issues
+
+
+### Step 5.1: No Additional Accounts Needed!
+
+OWASP Dependency-Check is completely free and doesn't require an account or token.
+
+### Step 5.2: Create SCA Workflow
+
+Create `.github/workflows/2-sca-only.yml`:
+
+```yaml
+# SCA (Software Composition Analysis) with OWASP Dependency-Check
+name: 2. SCA - Dependency Security Scan
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sca:
+    name: OWASP Dependency Check (SCA)
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # Step 4: Run OWASP Dependency-Check
+      - name: Run OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        id: depcheck
+        with:
+          project: 'calculator-app'
+          path: '.'
+          format: 'ALL'  # Generate HTML, JSON, CSV, XML
+          out: 'reports'
+          args: >
+            --failOnCVSS 7
+            --enableRetired
+      
+      # Step 5: Upload Dependency-Check reports
+      - name: Upload Dependency-Check reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-reports
+          path: reports/
+      
+      # Step 6: Upload to GitHub Security (if SARIF available)
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('reports/dependency-check-report.sarif') != ''
+        with:
+          sarif_file: reports/dependency-check-report.sarif
+          category: sca
+```
+
+
+### Understanding the SCA Workflow
+
+**Key Configurations**:
+
+- `project: 'calculator-app'` → Your project name
+- `path: '.'` → Scan current directory
+- `format: 'ALL'` → Generate multiple report formats
+- `--failOnCVSS 7` → Fail if vulnerabilities have severity ≥7 (HIGH)
+- `--enableRetired` → Include retired vulnerabilities
+
+**What Gets Scanned**:
+
+- Python packages in `requirements.txt`
+- Any JAR files, JavaScript, Ruby gems, etc.
+- Transitive dependencies (dependencies of dependencies)
+
+***
+
+## Part 6: DAST Setup - Live Application Scanning
+
+### What Is DAST?
+
+**DAST (Dynamic Application Security Testing)** tests your **running application** by simulating real attacks.
+
+**OWASP ZAP (Zed Attack Proxy)** will test for:
+
+- SQL injection
+- Cross-site scripting (XSS)
+- Security misconfigurations
+- Broken authentication
+
+
+### Step 6.1: No Account Needed!
+
+OWASP ZAP is completely free and open-source.
+
+### Step 6.2: Create DAST Workflow
+
+Create `.github/workflows/3-dast-only.yml`:
+
+```yaml
+# DAST (Dynamic Application Security Testing) with OWASP ZAP
+name: 3. DAST - Live Application Scan
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  security-events: write
+  issues: write  # For ZAP to create issues
+
+jobs:
+  dast:
+    name: OWASP ZAP Scan (DAST)
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # Step 4: Start the application in background
+      - name: Start Flask application
+        run: |
+          python app.py &
+          sleep 10  # Wait for app to start
+          echo "Application started on http://localhost:5000"
+      
+      # Step 5: Verify application is running
+      - name: Verify application is running
+        run: |
+          curl -f http://localhost:5000 || exit 1
+          echo "Application is responding"
+      
+      # Step 6: Run OWASP ZAP Baseline Scan
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:5000'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'  # Include alpha rules
+          allow_issue_writing: false  # Set to true to create GitHub issues
+      
+      # Step 7: Run OWASP ZAP Full Scan (more thorough)
+      - name: ZAP Full Scan
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: 'http://localhost:5000'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a -j'  # Include AJAX spider
+          allow_issue_writing: false
+      
+      # Step 8: Upload ZAP scan reports
+      - name: Upload ZAP reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-reports
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
+```
+
+
+### Step 6.3: Create ZAP Rules File (Optional)
+
+Create `.zap/rules.tsv` to customize ZAP scanning:
+
+```tsv
+10035	IGNORE	(Strict-Transport-Security Header)
+10063	IGNORE	(Feature Policy Header)
+```
+
+This tells ZAP to ignore certain warnings that may not be relevant for a demo app.
+
+### Understanding the DAST Workflow
+
+**The Process**:
+
+1. **Start the app**: Runs Flask application in background
+2. **Wait**: Gives app time to fully start (10 seconds)
+3. **Verify**: Checks app is accessible
+4. **Baseline scan**: Quick passive scan (5-10 minutes)
+5. **Full scan**: Deep active scan (15-30 minutes)
+6. **Upload reports**: Saves scan results
+
+**Scan Types**:
+
+- **Baseline**: Passive scan, no attacks, fast
+- **Full**: Active attacks, thorough, slower
+
+***
+
+## Part 7: Complete Integrated Workflow
+
+Now let's combine all three scans into one comprehensive security pipeline!
+
+### Step 7.1: Create Complete Workflow
+
+Create `.github/workflows/4-complete-security.yml`:
+
+```yaml
+# Complete Security Pipeline: SAST + SCA + DAST
+name: 4. Complete Security Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+
+jobs:
+  # JOB 1: SAST - Static Code Analysis
+  sast:
+    name: "1️⃣ SAST - Code Analysis"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Snyk Code Scan (SAST)
+        continue-on-error: true
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code test
+          args: --sarif-file-output=snyk-code.sarif
+      
+      - name: Upload SAST results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk-code.sarif
+          category: sast
+
+  # JOB 2: SCA - Dependency Analysis
+  sca:
+    name: "2️⃣ SCA - Dependency Check"
+    runs-on: ubuntu-latest
+    needs: sast  # Run after SAST
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run OWASP Dependency-Check (SCA)
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'calculator-app'
+          path: '.'
+          format: 'ALL'
+          out: 'reports'
+          args: >
+            --failOnCVSS 7
+            --enableRetired
+      
+      - name: Upload SCA reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sca-reports
+          path: reports/
+
+  # JOB 3: Build Application
+  build:
+    name: "3️⃣ Build Application"
+    runs-on: ubuntu-latest
+    needs: [sast, sca]  # Run after SAST and SCA pass
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Test application starts
+        run: |
+          python app.py &
+          sleep 5
+          curl -f http://localhost:5000 || exit 1
+          echo "✅ Application builds and runs successfully"
+
+  # JOB 4: DAST - Dynamic Application Testing
+  dast:
+    name: "4️⃣ DAST - Live Security Scan"
+    runs-on: ubuntu-latest
+    needs: build  # Run after successful build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Start application
+        run: |
+          python app.py &
+          sleep 10
+          echo "Application running on http://localhost:5000"
+      
+      - name: Verify application
+        run: curl -f http://localhost:5000
+      
+      - name: Run ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:5000'
+          cmd_options: '-a'
+          allow_issue_writing: false
+      
+      - name: Upload DAST reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dast-reports
+          path: |
+            report_html.html
+            report_json.json
+
+  # JOB 5: Security Summary
+  summary:
+    name: "📊 Security Summary"
+    runs-on: ubuntu-latest
+    needs: [sast, sca, dast]
+    if: always()
+    
+    steps:
+      - name: Generate Security Summary
+        run: |
+          echo "# 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SAST (Static Analysis): Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SCA (Dependency Check): Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ DAST (Dynamic Testing): Completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Check the **Actions** tab for detailed reports" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 Check the **Security** tab for vulnerability details" >> $GITHUB_STEP_SUMMARY
+```
+
+
+### Understanding the Complete Workflow
+
+**Job Execution Order**:
+
+```
+1. SAST (Code scan) → Runs first
+         ↓
+2. SCA (Dependency scan) → Runs after SAST
+         ↓
+3. Build (Verify app works) → Runs after both pass
+         ↓
+4. DAST (Live scan) → Runs after successful build
+         ↓
+5. Summary → Generates report
+```
+
+**Why This Order?**
+
+1. **SAST first**: Catch code issues before anything else
+2. **SCA next**: Check dependencies are safe
+3. **Build after**: Only build if code and deps are okay
+4. **DAST last**: Test the running application
+5. **Summary always**: Report results even if failures occur
+
+***
+
+## Part 8: Testing Everything
+
+### Step 8.1: Push to GitHub
+
+```bash
+# Create repository on GitHub first
+# Then connect your local repo
+
+# Add remote (replace with your repo URL)
+git remote add origin https://github.com/YOUR_USERNAME/calculator-security-demo.git
+
+# Push all files
+git add .
+git commit -m "Add complete security scanning pipeline"
+git push -u origin main
+```
+
+
+### Step 8.2: Watch Workflows Run
+
+1. Go to your repository on GitHub
+2. Click **Actions** tab
+3. You should see workflows running:
+    - `1. SAST - Code Security Scan`
+    - `2. SCA - Dependency Security Scan`
+    - `3. DAST - Live Application Scan`
+    - `4. Complete Security Pipeline`
+
+### Step 8.3: Check Workflow Progress
+
+Click on any running workflow to see:
+
+- Real-time logs
+- Each step's progress
+- Green checkmarks ✅ or red Xs ❌
+
+**Expected Timeline**:
+
+- SAST: 2-3 minutes
+- SCA: 3-5 minutes
+- DAST Baseline: 5-10 minutes
+- DAST Full: 15-30 minutes
+- Complete Pipeline: 20-40 minutes total
+
+***
+
+## Part 9: Understanding Results
+
+### Where to Find Results
+
+#### 1. Actions Tab
+
+**Path**: Repository → Actions → Select workflow run
+
+**What you see**:
+
+- Workflow execution logs
+- Step-by-step progress
+- Error messages and warnings
+- Downloaded artifacts (reports)
+
+**How to download reports**:
+
+1. Go to completed workflow run
+2. Scroll to bottom "Artifacts" section
+3. Click report names to download
+
+#### 2. Security Tab
+
+**Path**: Repository → Security → Code scanning alerts
+
+**What you see**:
+
+- Organized vulnerability list
+- Severity ratings
+- Affected files and lines
+- Remediation suggestions
+
+**Filter by**:
+
+- Severity (Critical, High, Medium, Low)
+- Status (Open, Fixed, Dismissed)
+- Tool (SAST, SCA, DAST)
+
+
+### Reading Vulnerability Reports
+
+#### Severity Levels
+
+| Severity | CVSS Score | Action Required | Example |
+| :-- | :-- | :-- | :-- |
+| 🔴 **Critical** | 9.0-10.0 | Fix immediately | Remote code execution |
+| 🟠 **High** | 7.0-8.9 | Fix within days | SQL injection |
+| 🟡 **Medium** | 4.0-6.9 | Fix within weeks | Information disclosure |
+| 🔵 **Low** | 0.1-3.9 | Monitor, fix when possible | Minor config issue |
+
+#### SAST Report Example
+
+```
+❌ High Severity: Hardcoded Secret Detected
+File: app.py
+Line: 15
+Issue: Secret key hardcoded in source code
+
+Recommendation: Use environment variables
+Fix: Replace with os.environ.get('SECRET_KEY')
+```
+
+
+#### SCA Report Example
+
+```
+❌ Critical: Known Vulnerability in flask
+Package: flask
+Current Version: 2.0.1
+Vulnerable: Yes (CVE-2023-XXXXX)
+Fixed Version: 2.3.0
+
+Recommendation: Upgrade to flask==2.3.0
+Impact: Remote code execution possible
+```
+
+
+#### DAST Report Example
+
+```
+❌ Medium: Missing Security Header
+URL: http://localhost:5000
+Issue: X-Content-Type-Options header not set
+
+Recommendation: Add security headers to responses
+Fix: Use Flask-Talisman or set headers manually
+```
+
+
+***
+
+## Part 10: Troubleshooting
+
+### Common Issues and Solutions
+
+#### Issue 1: SAST Fails - "SNYK_TOKEN not found"
+
+**Symptoms**:
+
+```
+Error: SNYK_TOKEN is not set
+```
+
+**Solution**:
+
+1. Verify secret exists: Settings → Secrets → Actions
+2. Name must be exactly `SNYK_TOKEN` (case-sensitive)
+3. Token must be valid (check Snyk account)
+4. Re-run workflow after adding secret
+
+#### Issue 2: SCA Takes Too Long
+
+**Symptoms**:
+
+- Workflow runs for 30+ minutes
+- "Downloading NVD database" step is slow
+
+**Solution**:
+This is normal for first run! The database is large (~500MB).
+
+- Subsequent runs use cached database (much faster)
+- Consider running SCA on schedule instead of every push
+
+```yaml
+# Run daily instead of on every push
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 2 AM daily
+```
+
+
+#### Issue 3: DAST Can't Connect to Application
+
+**Symptoms**:
+
+```
+Error: Connection refused to http://localhost:5000
+```
+
+**Solution**:
+
+1. Increase sleep time after starting app:
+```yaml
+- name: Start application
+  run: |
+    python app.py &
+    sleep 15  # Increase from 10 to 15
+```
+
+2. Add better health check:
+```yaml
+- name: Wait for application
+  run: |
+    for i in {1..30}; do
+      curl -f http://localhost:5000 && break
+      sleep 1
+    done
+```
+
+
+#### Issue 4: Workflow Shows "Queued" Forever
+
+**Symptoms**:
+
+- Workflow stuck in "Queued" state
+- No logs appearing
+
+**Solution**:
+
+- Check GitHub Actions status page
+- Free accounts have limited concurrent jobs (wait for others to finish)
+- Consider upgrading GitHub plan for more runners
+
+
+#### Issue 5: Too Many False Positives
+
+**Symptoms**:
+
+- Hundreds of low-severity issues
+- Many irrelevant warnings
+
+**Solution**:
+
+1. Adjust severity thresholds:
+```yaml
+# SAST - only critical/high
+args: --severity-threshold=high
+
+# SCA - only fail on critical
+args: --failOnCVSS 9
+```
+
+2. Create suppression files for known false positives
+
+#### Issue 6: Workflow Permissions Error
+
+**Symptoms**:
+
+```
+Error: Resource not accessible by integration
+```
+
+**Solution**:
+Add required permissions to workflow:
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+```
+
+
+***
+
+## Part 11: Practice Exercises
+
+### Exercise 1: Basic Setup (30 minutes)
+
+**Goal**: Get all three scans running
+
+**Steps**:
+
+1. ✅ Create calculator project with all files
+2. ✅ Get Snyk token and add to GitHub secrets
+3. ✅ Create all four workflow files
+4. ✅ Push to GitHub
+5. ✅ Verify all workflows run successfully
+
+**Success Criteria**:
+
+- All workflows appear in Actions tab
+- At least SAST and SCA complete (DAST may find issues)
+
+
+### Exercise 2: Fix Vulnerabilities (45 minutes)
+
+**Goal**: Remediate found vulnerabilities
+
+**Steps**:
+
+1. Run complete security pipeline
+2. Review Security tab for vulnerabilities
+3. Fix at least 3 issues:
+    - Update Flask to latest version
+    - Update Werkzeug to latest version
+    - Add security headers to responses
+
+**Fix for security headers** (add to `app.py`):
+
+```python
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+```
+
+**Success Criteria**:
+
+- Fewer vulnerabilities in next scan
+- Understanding how to read and fix issues
+
+
+### Exercise 3: Customize Scan Settings (30 minutes)
+
+**Goal**: Optimize scanning for your needs
+
+**Tasks**:
+
+1. Modify SAST to only fail on high/critical:
+```yaml
+with:
+  args: --severity-threshold=high
+```
+
+2. Modify SCA to fail on CVSS ≥9:
+```yaml
+with:
+  args: --failOnCVSS 9
+```
+
+3. Add DAST schedule to run daily:
+```yaml
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 3 AM daily
+  workflow_dispatch:  # Manual trigger
+```
+
+**Success Criteria**:
+
+- Workflows adjust behavior based on severity
+- Understanding of configuration options
+
+
+### Exercise 4: Add Another Application (60 minutes)
+
+**Goal**: Apply learning to new project
+
+**Steps**:
+
+1. Create a new endpoint in `app.py`:
+```python
+@app.route('/api/history', methods=['GET'])
+def history():
+    # Intentionally vulnerable: SQL injection
+    calc_id = request.args.get('id')
+    # This would be vulnerable if using real database
+    return jsonify({'message': f'Calculation {calc_id}'})
+```
+
+2. Run security scans
+3. Observe which scanners detect the vulnerability
+4. Fix the issue properly
+
+**Success Criteria**:
+
+- Understanding which scanner catches which vulnerability type
+- Ability to identify and fix issues independently
+
+
+### Exercise 5: Create Security Report (30 minutes)
+
+**Goal**: Document findings and remediations
+
+**Steps**:
+
+1. Download all scan reports from Actions artifacts
+2. Create a `SECURITY_FINDINGS.md` document with:
+    - Summary of vulnerabilities found
+    - Actions taken to fix them
+    - Remaining issues and justification
+3. Commit and push to repository
+
+**Template**:
+
+```markdown
+# Security Scan Results - [Date]
+
+## Summary
+- SAST: X issues found
+- SCA: Y vulnerabilities detected
+- DAST: Z security concerns identified
+
+## Critical Findings
+1. [Issue name] - Status: Fixed/In Progress/Accepted Risk
+
+## Remediation Actions
+1. Updated Flask from 2.0.1 → 2.3.2
+2. Added security headers
+...
+```
+
+
+***
+
+## Summary and Next Steps
+
+### What You've Learned
+
+✅ **SAST**: Scanning source code for vulnerabilities
+✅ **SCA**: Checking dependencies for known issues
+✅ **DAST**: Testing running applications for security flaws
+✅ **GitHub Actions**: Automating security in CI/CD
+✅ **Security Reporting**: Reading and understanding scan results
+
+### Best Practices Checklist
+
+- [ ] Run all three scan types (SAST + SCA + DAST)
+- [ ] Scan on every push and pull request
+- [ ] Review Security tab weekly
+- [ ] Fix critical/high issues within days
+- [ ] Keep dependencies updated
+- [ ] Don't disable scans to "make builds pass"
+- [ ] Document security decisions
+- [ ] Educate team on findings
+
+
+### Next Steps
+
+**Beginner → Intermediate**:
+
+1. Add container scanning (Docker image scan)
+2. Implement security policies (branch protection)
+3. Set up scheduled scans
+4. Integrate with Slack for notifications
+
+**Intermediate → Advanced**:
+
+1. Custom security rules and policies
+2. Integration with JIRA for ticket creation
+3. Security testing in staging environments
+4. Compliance reporting (SOC2, PCI-DSS)
+
+### Additional Resources
+
+**Tools**:
+
+- [Snyk Documentation](https://docs.snyk.io/)
+- [OWASP Dependency-Check](https://owasp.org/www-project-dependency-check/)
+- [OWASP ZAP](https://www.zaproxy.org/)
+- [GitHub Security Features](https://docs.github.com/en/code-security)
+
+**Learning**:
+
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [GitHub Security Lab](https://securitylab.github.com/)
+- [Snyk Learn](https://learn.snyk.io/)
+
+***
+
+## Quick Reference Card
+
+### Scan Type Comparison
+
+| Feature | SAST (Snyk) | SCA (Dep-Check) | DAST (ZAP) |
+| :-- | :-- | :-- | :-- |
+| **What it scans** | Source code | Dependencies | Running app |
+| **Requires token** | Yes (Snyk) | No | No |
+| **Speed** | Fast (2-3 min) | Medium (3-5 min) | Slow (15-30 min) |
+| **When to run** | Every push | Daily/weekly | After deployment |
+| **Best for finding** | Code flaws | Outdated libs | Runtime issues |
+
+### Workflow Trigger Options
+
+```yaml
+# On every push
+on: push
+
+# On pull requests only
+on: pull_request
+
+# Daily at 2 AM
+on:
+  schedule:
+    - cron: '0 2 * * *'
+
+# Manual trigger
+on: workflow_dispatch
+
+# Multiple triggers
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    - cron: '0 2 * * *'
+```
+
+
+### Common Configuration Snippets
+
+**Adjust SAST sensitivity**:
+
+```yaml
+args: --severity-threshold=critical  # Only critical issues
+```
+
+**Adjust SCA threshold**:
+
+```yaml
+args: --failOnCVSS 8  # Fail on CVSS ≥8
+```
+
+**DAST scan options**:
+
+```yaml
+cmd_options: '-a -j'  # Include AJAX spider + alpha rules
+```
+
+
+***
+
+**Remember**: Security is a journey, not a destination. Start with these basics and gradually improve your security posture over time!
+<span style="display:none">[^1][^10][^11][^12][^13][^14][^15][^16][^17][^18][^19][^2][^20][^21][^22][^23][^24][^25][^26][^27][^28][^29][^3][^30][^31][^32][^33][^34][^35][^36][^37][^38][^4][^5][^6][^7][^8][^9]</span>
+
+<div align="center">⁂</div>
+
+[^1]: https://san3ncrypt3d.com/2021/12/01/GA/
+
+[^2]: https://github.com/dependency-check/Dependency-Check_Action
+
+[^3]: https://securityboulevard.com/2024/12/top-dynamic-application-security-testing-dast-tools-for-2025/
+
+[^4]: https://blog.nishanthkp.com/docs/devsecops/dast/owasp-zap/zap-github
+
+[^5]: https://dev.to/perpk/github-action-for-creating-a-custom-owasp-dependency-check-report-5p3
+
+[^6]: https://brightsec.com/blog/dast-tools/
+
+[^7]: https://sahilsikarwar.hashnode.dev/automating-dast-with-owasp-zap-in-github-actions
+
+[^8]: https://github.com/actions/dependency-review-action
+
+[^9]: https://escape.tech/blog/top-vulnerability-scanning-tools-2025/
+
+[^10]: https://systemweakness.com/strengthening-your-web-application-security-integrating-owasp-zap-with-github-actions-2c177545f21d
+
+[^11]: https://developers.redhat.com/articles/2021/11/30/automate-dependency-analytics-github-actions
+
+[^12]: https://www.intruder.io/blog/top-dast-tools
+
+[^13]: https://github.com/zaproxy/action-full-scan
+
+[^14]: https://github.com/dependency-check/DependencyCheck
+
+[^15]: https://www.jit.io/resources/appsec-tools/top-dast-tools-for-2024
+
+[^16]: https://www.zaproxy.org/blog/2020-05-15-dynamic-application-security-testing-with-zap-and-github-actions/
+
+[^17]: https://owasp.org/www-project-dependency-check/
+
+[^18]: https://thectoclub.com/tools/best-dast-tools/
+
+[^19]: https://aws.plainenglish.io/automate-code-quality-and-security-checks-using-github-actions-with-sonarqube-and-zap-9ac7d7655d28
+
+[^20]: https://graphite.com/guides/using-github-actions-for-automated-security-scans
+
+[^21]: https://escape.tech/blog/devsecops-part-4-scanning-docker-images-with-trivy/
+
+[^22]: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/configuring-the-dependency-review-action
+
+[^23]: https://developer.harness.io/docs/security-testing-orchestration/sto-techref-category/checkmarx/checkmarx-github-action-ingestion
+
+[^24]: https://github.com/marketplace/actions/dependency-review
+
+[^25]: https://docs.gitlab.com/user/application_security/container_scanning/
+
+[^26]: https://docs.github.com/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review
+
+[^27]: https://www.aquasec.com/cloud-native-academy/supply-chain-security/software-composition-analysis-sca/
+
+[^28]: https://graphite.com/guides/github-pr-dependency
+
+[^29]: https://blog.gitguardian.com/container-security-scanning-vulnerabilities-risks-and-tooling/
+
+[^30]: https://docs.github.com/actions/quickstart
+
+[^31]: https://docs.boostsecurity.io/user-guide/reference-guides/scanners/registry-modules.html
+
+[^32]: https://www.endorlabs.com/learn/surprise-your-github-actions-are-dependencies-too
+
+[^33]: https://www.linkedin.com/posts/felixajorge_devops-pam-delinea-activity-7319093092865740800-YVHp
+
+[^34]: https://www.youtube.com/watch?v=4tWglfWd1So
+
+[^35]: https://escape.tech/blog/devsecops-part-iii-scanning-live-web-applications/
+
+[^36]: https://docs.github.com/en/enterprise-server@3.16/code-security/supply-chain-security/understanding-your-software-supply-chain/configuring-the-dependency-review-action
+
+[^37]: https://www.testdevlab.com/blog/integrating-security-testing-into-ci-cd-pipeline
+
+[^38]: https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/helping-others-review-your-changes
+
