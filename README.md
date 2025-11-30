@@ -100,6 +100,30 @@ GitHub Actions has specific requirements for artifact naming to avoid errors:
 - ✅ `sast-results`, `sca-reports`, `dast-findings`
 - ❌ `sast_results`, `sca_reports`, `dast/findings`
 
+### Important: Action Versions
+
+Always use the **correct, verified versions** of GitHub Actions. Using incorrect or non-existent versions will cause workflow failures.
+
+**Correct versions (as of November 2024)**:
+
+```yaml
+# SAST
+- github/codeql-action/init@v3
+- github/codeql-action/analyze@v3
+
+# SCA
+- dependency-check/Dependency-Check_Action@main
+
+# DAST - ✅ CORRECT VERSIONS
+- zaproxy/action-baseline@v0.14.0
+- zaproxy/action-full-scan@v0.12.0
+
+# Utilities
+- actions/checkout@v4
+- actions/setup-python@v5
+- actions/upload-artifact@v4
+```
+
 ### Time Required
 
 - Initial setup: 30-45 minutes
@@ -645,15 +669,17 @@ jobs:
           echo "Application is responding"
       
       # Step 6: Run OWASP ZAP Baseline Scan
+      # ✅ CORRECT VERSION: v0.14.0 (not v0.15.0)
       - name: ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.15.0
+        uses: zaproxy/action-baseline@v0.14.0
         with:
           target: 'http://localhost:5000'
-          cmd_options: '-a'  # Include alpha rules
+          cmd_options: '-a'
           allow_issue_writing: false
+          artifact_name: 'zap-baseline-scan'  # ✅ Override artifact name!
         continue-on-error: true
       
-      # ✅ Proper artifact naming (hyphens, not underscores)
+      # ✅ Manual artifact upload with proper naming
       - name: Upload ZAP baseline reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -665,12 +691,14 @@ jobs:
             report_md.md
       
       # Step 7: Run OWASP ZAP Full Scan (more thorough)
+      # ✅ CORRECT VERSION: v0.12.0 (not v0.15.0)
       - name: ZAP Full Scan
-        uses: zaproxy/action-full-scan@v0.15.0
+        uses: zaproxy/action-full-scan@v0.12.0
         with:
           target: 'http://localhost:5000'
-          cmd_options: '-a -j'  # Include AJAX spider
+          cmd_options: '-a -j'
           allow_issue_writing: false
+          artifact_name: 'zap-fullscan-scan'  # ✅ Override artifact name!
         continue-on-error: true
       
       # ✅ Unique artifact name for full scan results
@@ -700,6 +728,23 @@ jobs:
 
 - **Baseline**: Passive scan, no attacks, fast
 - **Full**: Active attacks, thorough, slower
+
+**Important Version Note**:
+
+⚠️ **CRITICAL**: Use these exact versions:
+- `zaproxy/action-baseline@v0.14.0` (NOT v0.15.0)
+- `zaproxy/action-full-scan@v0.12.0` (NOT v0.15.0)
+
+Versions v0.15.0 do NOT exist and will cause "unable to find version" errors.
+
+**Override artifact_name Parameter**:
+
+Always override the default artifact name to avoid underscore errors:
+```yaml
+artifact_name: 'zap-baseline-scan'    # Uses hyphens ✅
+artifact_name: 'zap-fullscan-scan'    # Uses hyphens ✅
+# NOT: artifact_name: 'zap_scan'      # Uses underscores ❌
+```
 
 ### Step 6.3: Create ZAP Rules File (Optional)
 
@@ -868,20 +913,24 @@ jobs:
       - name: Verify application
         run: curl -f http://localhost:5000
       
+      # ✅ CORRECT VERSION: v0.14.0
       - name: Run ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.15.0
+        uses: zaproxy/action-baseline@v0.14.0
         with:
           target: 'http://localhost:5000'
           cmd_options: '-a'
           allow_issue_writing: false
+          artifact_name: 'zap-baseline-scan'  # ✅ Override!
         continue-on-error: true
       
+      # ✅ CORRECT VERSION: v0.12.0
       - name: Run ZAP Full Scan
-        uses: zaproxy/action-full-scan@v0.15.0
+        uses: zaproxy/action-full-scan@v0.12.0
         with:
           target: 'http://localhost:5000'
           cmd_options: '-a -j'
           allow_issue_writing: false
+          artifact_name: 'zap-fullscan-scan'  # ✅ Override!
         continue-on-error: true
       
       # ✅ Proper artifact naming with hyphens and unique names
@@ -967,7 +1016,7 @@ git remote add origin https://github.com/YOUR_USERNAME/calculator-security-demo.
 
 # Push all files
 git add .
-git commit -m "Add complete security scanning pipeline with CodeQL and proper artifact naming"
+git commit -m "Add complete security scanning pipeline with CodeQL, correct ZAP versions, and proper artifact naming"
 git push -u origin main
 ```
 
@@ -1215,7 +1264,33 @@ A: ZAP scans for common paths like `/robots.txt` and `/sitemap.xml`. 404 respons
 
 ### Common Issues and Solutions
 
-#### Issue 1: Artifact Name Not Valid Error
+#### Issue 1: Unable to Resolve Action - Wrong Version
+
+**Symptoms**:
+
+```
+Error: Unable to resolve action `zaproxy/action-full-scan@v0.15.0`, unable to find version `v0.15.0`
+```
+
+**Root Cause**:
+
+Version v0.15.0 does not exist. It's a documentation error.
+
+**Solution**:
+
+Use the correct versions:
+
+```yaml
+# ✅ CORRECT
+- uses: zaproxy/action-baseline@v0.14.0
+- uses: zaproxy/action-full-scan@v0.12.0
+
+# ❌ WRONG
+- uses: zaproxy/action-baseline@v0.15.0
+- uses: zaproxy/action-full-scan@v0.15.0
+```
+
+#### Issue 2: Artifact Name Not Valid Error
 
 **Symptoms**:
 
@@ -1225,26 +1300,21 @@ Error: Create Artifact Container failed: The artifact name zap_scan is not valid
 
 **Root Cause**:
 
-Artifact name contains underscores or special characters that GitHub API rejects.
+Artifact names cannot contain underscores. The default ZAP artifact name is `zap_scan`.
 
 **Solution**:
 
-1. Use version v0.15.0 or later of ZAP action
-2. Ensure artifact names use only alphanumeric + hyphens
-3. Make each artifact name unique (no duplicates)
-
-**Example fix**:
+Override the artifact_name with hyphens:
 
 ```yaml
-# ❌ Wrong
-- name: zap_scan
-
-# ✅ Correct
-- name: zap-baseline-reports
-- name: zap-fullscan-reports
+- name: ZAP Baseline Scan
+  uses: zaproxy/action-baseline@v0.14.0
+  with:
+    target: 'http://localhost:5000'
+    artifact_name: 'zap-baseline-scan'  # Use hyphens ✅
 ```
 
-#### Issue 2: CodeQL Analysis Takes Too Long
+#### Issue 3: CodeQL Analysis Takes Too Long
 
 **Symptoms**:
 
@@ -1262,7 +1332,7 @@ with:
   queries: security-minimal  # Faster, less comprehensive
 ```
 
-#### Issue 3: SCA Takes Too Long
+#### Issue 4: SCA Takes Too Long
 
 **Symptoms**:
 
@@ -1282,7 +1352,7 @@ on:
     - cron: '0 2 * * *'  # 2 AM daily
 ```
 
-#### Issue 4: DAST Can't Connect to Application
+#### Issue 5: DAST Can't Connect to Application
 
 **Symptoms**:
 
@@ -1312,7 +1382,7 @@ Error: Connection refused to http://localhost:5000
     done
 ```
 
-#### Issue 5: Workflow Shows "Queued" Forever
+#### Issue 6: Workflow Shows "Queued" Forever
 
 **Symptoms**:
 
@@ -1325,7 +1395,7 @@ Error: Connection refused to http://localhost:5000
 - Free accounts have limited concurrent jobs (wait for others to finish)
 - Consider upgrading GitHub plan for more runners
 
-#### Issue 6: Too Many False Positives
+#### Issue 7: Too Many False Positives
 
 **Symptoms**:
 
@@ -1343,7 +1413,7 @@ args: --failOnCVSS 9
 
 2. Create suppression files for known false positives
 
-#### Issue 7: Workflow Permissions Error
+#### Issue 8: Workflow Permissions Error
 
 **Symptoms**:
 
@@ -1373,7 +1443,7 @@ permissions:
 **Steps**:
 
 1. ✅ Create calculator project with all files
-2. ✅ Create all four workflow files with proper naming
+2. ✅ Create all four workflow files with proper naming and correct versions
 3. ✅ Push to GitHub
 4. ✅ Verify all workflows run successfully
 5. ✅ Check that artifacts appear with safe names
@@ -1383,6 +1453,7 @@ permissions:
 - All workflows appear in Actions tab
 - Artifacts section shows: `sca-reports`, `zap-baseline-reports`, `zap-fullscan-reports`
 - No "artifact name not valid" errors
+- No "unable to find version" errors
 
 ### Exercise 2: Analyze Scan Results (45 minutes)
 
@@ -1568,7 +1639,16 @@ Please email security@example.com
 ✅ **SCA**: Checking dependencies for known issues
 ✅ **DAST with ZAP**: Testing running applications for security flaws
 ✅ **Proper artifact naming**: Avoiding GitHub Actions validation errors
+✅ **Correct action versions**: Using verified, working versions
 ✅ **Security Reporting**: Reading and understanding scan results
+
+### Key Takeaways on Versions
+
+- **Always verify action versions** before using them
+- **zaproxy/action-baseline@v0.14.0** is the latest (NOT v0.15.0)
+- **zaproxy/action-full-scan@v0.12.0** is the latest (NOT v0.15.0)
+- **Override artifact_name** to avoid underscore validation errors
+- **Check GitHub marketplace** when in doubt
 
 ### Key Takeaways on DAST Results
 
@@ -1580,6 +1660,7 @@ Please email security@example.com
 ### Best Practices Checklist
 
 - [ ] Run all three scan types (SAST + SCA + DAST)
+- [ ] Use correct action versions from GitHub
 - [ ] Use proper artifact naming (hyphens, no underscores)
 - [ ] Scan on every push and pull request
 - [ ] Review Security tab weekly
@@ -1613,6 +1694,8 @@ Please email security@example.com
 - [OWASP ZAP](https://www.zaproxy.org/)
 - [GitHub Actions Upload Artifact](https://github.com/actions/upload-artifact)
 - [GitHub Security Features](https://docs.github.com/en/code-security)
+- [zaproxy/action-baseline releases](https://github.com/zaproxy/action-baseline/releases)
+- [zaproxy/action-full-scan releases](https://github.com/zaproxy/action-full-scan/releases)
 
 **Learning**:
 
@@ -1624,6 +1707,17 @@ Please email security@example.com
 ***
 
 ## Quick Reference Card
+
+### Action Versions (Correct as of November 2024)
+
+| Action | Version | Status |
+| :-- | :-- | :-- |
+| github/codeql-action/init | v3 | ✅ Latest |
+| github/codeql-action/analyze | v3 | ✅ Latest |
+| dependency-check/Dependency-Check_Action | main | ✅ Latest |
+| zaproxy/action-baseline | v0.14.0 | ✅ Latest |
+| zaproxy/action-full-scan | v0.12.0 | ✅ Latest |
+| actions/upload-artifact | v4 | ✅ Latest |
 
 ### Scan Type Comparison
 
@@ -1643,9 +1737,9 @@ Please email security@example.com
 | :-- | :-- | :-- |
 | **Characters** | a-z, 0-9, `-` | `_`, `/`, `\`, `:`, `\|`, `?`, `*`, `"`, `<`, `>` |
 | **Underscore** | `zap-reports` | `zap_reports` |
+| **ZAP Override** | `zap-baseline-scan` | `zap_scan` (default) |
 | **Multiple files** | Each unique name | Same name twice |
-| **Length** | `sca-reports` | `my-security-scan-action-reports-from-job-123` |
-| **Clarity** | `sast-codeql-results` | `artifact1`, `data`, `results` |
+| **Clarity** | `sast-codeql-results` | `artifact1`, `data` |
 
 ### DAST Result Codes
 
@@ -1686,6 +1780,6 @@ on:
 
 ***
 
-**Remember**: Security is a journey, not a destination. Start with these basics and gradually improve your security posture over time! Use these scans to learn about vulnerabilities and best practices.
+**Remember**: Security is a journey, not a destination. Start with these basics and gradually improve your security posture over time! Use these scans to learn about vulnerabilities and best practices. Always use verified action versions and proper naming conventions to ensure your pipelines work reliably.
 
 <div align="center">⁂</div>
