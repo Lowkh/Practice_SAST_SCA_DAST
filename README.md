@@ -15,8 +15,9 @@
 7. [Complete Integrated Workflow](#part-7-complete-workflow)
 8. [Testing Everything](#part-8-testing)
 9. [Understanding Results](#part-9-understanding-results)
-10. [Troubleshooting](#part-10-troubleshooting)
-11. [Practice Exercises](#part-11-practice-exercises)
+10. [Interpreting DAST Scan Results](#part-10-interpreting-dast)
+11. [Troubleshooting](#part-11-troubleshooting)
+12. [Practice Exercises](#part-12-practice-exercises)
 
 ***
 
@@ -168,14 +169,6 @@ def calculate():
     
     except (ValueError, KeyError) as e:
         return jsonify({'error': 'Invalid input'}), 400
-
-@app.after_request
-def add_security_headers(response):
-    """Add security headers to all responses"""
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    return response
 
 if __name__ == '__main__':
     # Note: debug=False in production
@@ -544,7 +537,7 @@ jobs:
             --enableRetired
       
       # Step 5: Upload Dependency-Check reports
-      # ✅ FIXED: Using proper artifact naming (hyphens, not underscores)
+      # ✅ Proper artifact naming (hyphens, not underscores)
       - name: Upload Dependency-Check reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -653,64 +646,44 @@ jobs:
       
       # Step 6: Run OWASP ZAP Baseline Scan
       - name: ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:5000'
-          rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a'  # Include alpha rules
           allow_issue_writing: false
+        continue-on-error: true
       
-      # Step 7: Run OWASP ZAP Full Scan (more thorough)
-      - name: ZAP Full Scan
-        uses: zaproxy/action-full-scan@v0.10.0
-        with:
-          target: 'http://localhost:5000'
-          rules_file_name: '.zap/rules.tsv'
-          cmd_options: '-a -j'  # Include AJAX spider
-          allow_issue_writing: false
-      
-      # ✅ FIXED: Proper artifact naming (hyphens, not underscores)
-      # ✅ FIXED: Unique artifact names to avoid conflicts
+      # ✅ Proper artifact naming (hyphens, not underscores)
       - name: Upload ZAP baseline reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: zap-baseline-reports
-          path: report_html.html
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
       
+      # Step 7: Run OWASP ZAP Full Scan (more thorough)
+      - name: ZAP Full Scan
+        uses: zaproxy/action-full-scan@v0.15.0
+        with:
+          target: 'http://localhost:5000'
+          cmd_options: '-a -j'  # Include AJAX spider
+          allow_issue_writing: false
+        continue-on-error: true
+      
+      # ✅ Unique artifact name for full scan results
       - name: Upload ZAP fullscan reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: zap-fullscan-reports
           path: |
+            report_html.html
             report_json.json
             report_md.md
 ```
-
-### Artifact Naming Fixes Explained
-
-The original error occurred due to improper artifact naming:
-
-- ❌ **Original**: `name: zap_scan` - Contains underscore that triggers API validation errors
-- ✅ **Fixed**: `name: zap-baseline-reports` - Uses hyphens and is descriptive
-
-**Key fixes applied**:
-
-1. **Replaced underscores with hyphens**: `zap_scan` → `zap-baseline-reports`
-2. **Created unique names**: `zap-baseline-reports` and `zap-fullscan-reports` instead of duplicate names
-3. **Made names descriptive**: Clearly indicates which scan generated the reports
-
-### Step 6.3: Create ZAP Rules File (Optional)
-
-Create `.zap/rules.tsv` to customize ZAP scanning:
-
-```tsv
-10035	IGNORE	(Strict-Transport-Security Header)
-10063	IGNORE	(Feature Policy Header)
-```
-
-This tells ZAP to ignore certain warnings that may not be relevant for a demo app.
 
 ### Understanding the DAST Workflow
 
@@ -727,6 +700,17 @@ This tells ZAP to ignore certain warnings that may not be relevant for a demo ap
 
 - **Baseline**: Passive scan, no attacks, fast
 - **Full**: Active attacks, thorough, slower
+
+### Step 6.3: Create ZAP Rules File (Optional)
+
+Create `.zap/rules.tsv` to customize ZAP scanning:
+
+```tsv
+10035	IGNORE	(Strict-Transport-Security Header)
+10063	IGNORE	(Feature Policy Header)
+```
+
+This tells ZAP to ignore certain warnings that may not be relevant for a demo app.
 
 ***
 
@@ -820,7 +804,7 @@ jobs:
             --failOnCVSS 7
             --enableRetired
       
-      # ✅ FIXED: Proper artifact naming
+      # ✅ Proper artifact naming
       - name: Upload SCA reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -885,20 +869,22 @@ jobs:
         run: curl -f http://localhost:5000
       
       - name: Run ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+        uses: zaproxy/action-baseline@v0.15.0
         with:
           target: 'http://localhost:5000'
           cmd_options: '-a'
           allow_issue_writing: false
+        continue-on-error: true
       
       - name: Run ZAP Full Scan
-        uses: zaproxy/action-full-scan@v0.10.0
+        uses: zaproxy/action-full-scan@v0.15.0
         with:
           target: 'http://localhost:5000'
           cmd_options: '-a -j'
           allow_issue_writing: false
+        continue-on-error: true
       
-      # ✅ FIXED: Proper artifact naming with hyphens and unique names
+      # ✅ Proper artifact naming with hyphens and unique names
       - name: Upload ZAP baseline reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -981,7 +967,7 @@ git remote add origin https://github.com/YOUR_USERNAME/calculator-security-demo.
 
 # Push all files
 git add .
-git commit -m "Add complete security scanning pipeline with CodeQL and fixed artifact naming"
+git commit -m "Add complete security scanning pipeline with CodeQL and proper artifact naming"
 git push -u origin main
 ```
 
@@ -1101,17 +1087,131 @@ Impact: Remote code execution possible
 #### DAST Report Example
 
 ```
-❌ Medium: Missing Security Header
+⚠️ Medium: Missing Security Header
 URL: http://localhost:5000
 Issue: X-Content-Type-Options header not set
 
 Recommendation: Add security headers to responses
-Fix: Header already added in app.py!
+Details: This header prevents browsers from MIME-type sniffing
 ```
 
 ***
 
-## Part 10: Troubleshooting
+## Part 10: Interpreting DAST Scan Results
+
+### Understanding ZAP Scan Output
+
+When you run OWASP ZAP scanning via GitHub Actions, you'll see detailed scan results. Here's what they mean:
+
+### Result Categories
+
+**PASS**: Security check passed - no issues detected
+```
+PASS: Directory Browsing [10033]
+```
+
+**WARN-NEW**: New security warning found that needs attention
+```
+WARN-NEW: Missing Anti-clickjacking Header [10020] x 1
+http://localhost:5000 (200 OK)
+```
+
+**WARN-INPROG**: Warning that was already present in previous scans
+```
+WARN-INPROG: X-Frame-Options Header [10020]
+```
+
+**FAIL-NEW**: Critical security failure found
+```
+FAIL-NEW: SQL Injection [40018] x 1
+```
+
+**FAIL-INPROG**: Critical issue from previous scan still present
+```
+FAIL-INPROG: Remote Code Execution [98765]
+```
+
+**INFO**: Informational findings that don't require action
+```
+INFO: Modern Web Application [10109]
+```
+
+### Common DAST Findings Explained
+
+#### Security Headers (Most Common)
+
+| Issue Code | What It Means | Why It Matters |
+| :-- | :-- | :-- |
+| **10020** | Missing X-Frame-Options | Clickjacking attacks possible |
+| **10021** | X-Content-Type-Options missing | MIME-sniffing attacks possible |
+| **10035** | Missing HSTS header | Man-in-the-middle attacks on HTTPS |
+| **10038** | Content Security Policy missing | XSS and injection attacks possible |
+| **10049** | Storable cacheable content | Sensitive data could be cached |
+| **10063** | Permissions Policy missing | Malicious scripts could access browser features |
+| **90004** | Spectre vulnerability | Side-channel information leak |
+| **10036** | Server version leakage | Information disclosure |
+
+#### Application Functionality Issues
+
+| Issue Code | What It Means | Example |
+| :-- | :-- | :-- |
+| **40018** | SQL Injection | Attacker can manipulate database queries |
+| **40019** | XSS (Cross-Site Scripting) | Attacker can inject malicious scripts |
+| **90005** | Broken authentication | User identity verification flawed |
+| **90006** | CORS misconfiguration | Unauthorized cross-origin access |
+
+### Analyzing Scan Results
+
+**Example Scan Output**:
+
+```
+Total of 3 URLs scanned
+
+PASS: 61 security checks passed
+WARN-NEW: 9 new warnings found
+FAIL-NEW: 0 critical failures
+FAIL-INPROG: 0 ongoing issues
+
+URLs Affected:
+- http://localhost:5000 (200 OK)
+- http://localhost:5000/robots.txt (404 Not Found)
+- http://localhost:5000/sitemap.xml (404 Not Found)
+```
+
+**What This Tells You**:
+
+1. ✅ **61 PASS** = Most security checks were successful
+2. ⚠️ **9 WARN-NEW** = Found 9 new issues to review
+3. ✅ **0 FAIL-NEW** = No critical failures detected
+4. ✅ **0 FAIL-INPROG** = No ongoing critical issues
+
+### Next Steps After Scan
+
+**For each finding:**
+
+1. **Understand the risk** - What type of attack does it enable?
+2. **Check affected URLs** - Where does the vulnerability exist?
+3. **Assess severity** - Is it critical, high, medium, or low?
+4. **Plan remediation** - How will you fix this issue?
+5. **Test the fix** - Re-run scans to verify it's resolved
+
+### Common Student Questions
+
+**Q: What does "Permission denied" error mean in ZAP logs?**
+A: This usually occurs during configuration file writes and is non-critical. The scan still completes successfully.
+
+**Q: Why does my baseline scan find more issues than before?**
+A: ZAP becomes more familiar with the application over time and may find issues in previously undiscovered code paths.
+
+**Q: Should I worry about informational (INFO) findings?**
+A: Not immediately. Prioritize FAIL > WARN > INFO. Info findings are just observations.
+
+**Q: Why do some URLs show "404 Not Found"?**
+A: ZAP scans for common paths like `/robots.txt` and `/sitemap.xml`. 404 responses are normal.
+
+***
+
+## Part 11: Troubleshooting
 
 ### Common Issues and Solutions
 
@@ -1123,29 +1223,25 @@ Fix: Header already added in app.py!
 Error: Create Artifact Container failed: The artifact name zap_scan is not valid
 ```
 
+**Root Cause**:
+
+Artifact name contains underscores or special characters that GitHub API rejects.
+
 **Solution**:
 
-1. Replace underscores (`_`) with hyphens (`-`)
-2. Remove special characters: `/`, `\`, `:`, `|`, `?`, `*`, `"`, `<`, `>`
-3. Make sure each artifact has a unique name (no duplicates)
-4. Use descriptive alphanumeric names
+1. Use version v0.15.0 or later of ZAP action
+2. Ensure artifact names use only alphanumeric + hyphens
+3. Make each artifact name unique (no duplicates)
 
 **Example fix**:
 
 ```yaml
 # ❌ Wrong
-- name: Upload ZAP reports
-  with:
-    name: zap_scan
+- name: zap_scan
 
 # ✅ Correct
-- name: Upload ZAP baseline reports
-  with:
-    name: zap-baseline-reports
-
-- name: Upload ZAP fullscan reports
-  with:
-    name: zap-fullscan-reports
+- name: zap-baseline-reports
+- name: zap-fullscan-reports
 ```
 
 #### Issue 2: CodeQL Analysis Takes Too Long
@@ -1268,7 +1364,7 @@ permissions:
 
 ***
 
-## Part 11: Practice Exercises (Optional)
+## Part 12: Practice Exercises
 
 ### Exercise 1: Basic Setup (30 minutes)
 
@@ -1288,140 +1384,179 @@ permissions:
 - Artifacts section shows: `sca-reports`, `zap-baseline-reports`, `zap-fullscan-reports`
 - No "artifact name not valid" errors
 
-### Exercise 2: Fix Vulnerabilities (45 minutes)
+### Exercise 2: Analyze Scan Results (45 minutes)
 
-**Goal**: Remediate found vulnerabilities
+**Goal**: Understand what your scans found
 
 **Steps**:
 
 1. Run complete security pipeline
-2. Review Security tab for vulnerabilities
-3. Fix at least 3 issues:
-    - Update Flask to latest version
-    - Update Werkzeug to latest version
-    - Verify security headers are present
-
-**Fix for security headers** (already in `app.py`):
-
-```python
-@app.after_request
-def add_security_headers(response):
-    """Add security headers to all responses"""
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    return response
-```
-
-**Success Criteria**:
-
-- Fewer vulnerabilities in next scan
-- Understanding how to read and fix issues
-
-### Exercise 3: Customize Scan Settings (30 minutes)
-
-**Goal**: Optimize CodeQL scanning for your needs
-
-**Tasks**:
-
-1. Modify SAST to use different query suites:
-
-```yaml
-with:
-  queries: security-minimal  # Fast scan
-  # or: security-extended   # Comprehensive scan
-```
-
-2. Modify SCA to fail on CVSS ≥9:
-
-```yaml
-with:
-  args: --failOnCVSS 9
-```
-
-3. Add CodeQL schedule to run daily:
-
-```yaml
-on:
-  schedule:
-    - cron: '0 3 * * *'  # 3 AM daily
-  workflow_dispatch:  # Manual trigger
-```
-
-**Success Criteria**:
-
-- Workflows adjust behavior based on configuration
-- Understanding of CodeQL options
-
-### Exercise 4: Rename Artifacts (20 minutes)
-
-**Goal**: Practice safe artifact naming
-
-**Tasks**:
-
-1. Identify any artifacts using underscores
-2. Create new versions with proper naming:
-   - Replace `_` with `-`
-   - Ensure unique names
-   - Test the workflow
-
-**Examples to rename**:
-
-```yaml
-# ❌ Old naming
-- name: sast_results
-- name: sca_findings
-- name: dast_scan
-
-# ✅ New naming
-- name: sast-results
-- name: sca-findings
-- name: dast-scan
-```
-
-**Success Criteria**:
-
-- All artifacts upload successfully
-- No "artifact name not valid" errors
-- Clear naming convention applied
-
-### Exercise 5: Create Security Report (30 minutes)
-
-**Goal**: Document findings and remediations
-
-**Steps**:
-
-1. Download all scan reports from Actions artifacts
-2. Create a `SECURITY_FINDINGS.md` document with:
-    - Summary of vulnerabilities found
-    - Actions taken to fix them
-    - Remaining issues and justification
-3. Commit and push to repository
+2. Review the **Actions** tab logs
+3. Download artifacts from each scan
+4. Create a `SCAN_ANALYSIS.md` document that includes:
+   - Number of PASS/WARN-NEW/FAIL-NEW from DAST
+   - List of SCA vulnerabilities found
+   - Any SAST issues detected
+   - Severity breakdown
 
 **Template**:
 
 ```markdown
-# Security Scan Results - [Date]
+# Security Scan Analysis - [Date]
 
-## Summary
-- SAST (CodeQL): X issues found
-- SCA: Y vulnerabilities detected
-- DAST: Z security concerns identified
+## DAST Results (ZAP Baseline)
+- Total URLs scanned: X
+- PASS: Y checks
+- WARN-NEW: Z warnings
+- FAIL-NEW: N failures
 
-## Critical Findings
-1. [Issue name] - Status: Fixed/In Progress/Accepted Risk
+### Warning Summary
+[List the warnings found with their codes]
 
-## Remediation Actions
-1. Updated Flask from 2.0.1 → 2.3.2
-2. Added security headers (X-Content-Type-Options, etc.)
-3. [Additional fixes]
+## SCA Results (Dependency Check)
+- High severity: X
+- Medium severity: Y
+- Low severity: Z
 
-## Artifacts Used
-- CodeQL results (from Security tab)
-- sca-reports
-- zap-baseline-reports
-- zap-fullscan-reports
+### Vulnerable Packages
+[List packages with CVEs]
+
+## SAST Results (CodeQL)
+- Total issues: X
+- By type: [breakdown]
+
+## Recommendations
+[Based on findings, what should be prioritized?]
 ```
+
+**Success Criteria**:
+
+- Understand what each scan result means
+- Ability to categorize findings by severity
+- Clear documentation of results
+
+### Exercise 3: Interpret ZAP Findings (30 minutes)
+
+**Goal**: Learn to read DAST scan output
+
+**Tasks**:
+
+1. Look at your ZAP report files (HTML, JSON, Markdown)
+2. For each WARN-NEW finding, identify:
+   - The issue code (e.g., 10020)
+   - The risk level (High, Medium, Low)
+   - The affected URL
+   - What attack this prevents
+3. Create a table mapping issue codes to their meanings
+
+**Example**:
+
+| Code | Issue | Risk | Affected | Why It Matters |
+| :-- | :-- | :-- | :-- | :-- |
+| 10020 | Missing X-Frame-Options | Medium | http://localhost:5000 | Prevents clickjacking attacks |
+| 10021 | X-Content-Type-Options missing | Medium | http://localhost:5000 | Prevents MIME-sniffing attacks |
+
+**Success Criteria**:
+
+- Can explain each ZAP finding
+- Understand the security risk
+- Know why each header matters
+
+### Exercise 4: Compare Multiple Scans (60 minutes)
+
+**Goal**: Learn how different scanners complement each other
+
+**Tasks**:
+
+1. Run all three scans (SAST, SCA, DAST)
+2. Download reports from each
+3. Create a comparison document showing:
+   - What SAST found that DAST didn't
+   - What DAST found that SAST didn't
+   - What SCA uniquely identified
+   - Overlap between tools
+
+**Example Comparison**:
+
+```markdown
+# Scanner Comparison
+
+## Only CodeQL (SAST) Found
+- Code patterns and logic errors
+- Data flow vulnerabilities
+
+## Only ZAP (DAST) Found
+- Missing security headers
+- Runtime configuration issues
+- API endpoint vulnerabilities
+
+## Only Dependency-Check (SCA) Found
+- Outdated package versions
+- Known CVEs in dependencies
+
+## All Three Tools
+- (Unlikely - they focus on different layers)
+```
+
+**Success Criteria**:
+
+- Understanding of tool coverage
+- Knowing when to use each tool
+- Appreciation for layered security
+
+### Exercise 5: Document Your Security Pipeline (30 minutes)
+
+**Goal**: Create comprehensive security documentation
+
+**Steps**:
+
+1. Create a `SECURITY.md` in your repository
+2. Document:
+   - What scanning tools you use
+   - When they run (triggers)
+   - What each scan covers
+   - How to interpret results
+   - How to report vulnerabilities
+3. Include links to your workflow files
+
+**Template**:
+
+```markdown
+# Security Scanning
+
+## Overview
+This repository uses three types of security scanning:
+
+### SAST (Static Analysis with CodeQL)
+- Scans source code for vulnerabilities
+- Runs on push to main branch
+- Checks for: [list]
+- Artifacts: See GitHub Security tab
+
+### SCA (Dependency Check)
+- Scans Python packages for known CVEs
+- Runs on push to main branch
+- Checks for: [list]
+- Artifacts: sca-reports
+
+### DAST (Live Application with ZAP)
+- Tests running application for vulnerabilities
+- Runs on push to main branch
+- Checks for: [list]
+- Artifacts: zap-baseline-reports, zap-fullscan-reports
+
+## Understanding Results
+[Link to Part 10 in README]
+
+## Reporting Vulnerabilities
+Please email security@example.com
+```
+
+**Success Criteria**:
+
+- Clear documentation for future developers
+- Easy reference for understanding scans
+- Professional security documentation
 
 ***
 
@@ -1435,12 +1570,12 @@ on:
 ✅ **Proper artifact naming**: Avoiding GitHub Actions validation errors
 ✅ **Security Reporting**: Reading and understanding scan results
 
-### Key Takeaways on Artifact Naming
+### Key Takeaways on DAST Results
 
-- **Use hyphens, not underscores**: `zap-reports` not `zap_reports`
-- **Make names unique**: No duplicate artifact names in same workflow
-- **Keep it simple**: Alphanumeric + hyphens only
-- **Be descriptive**: `zap-baseline-reports` is clearer than `reports`
+- **PASS results** = Good! Security check was successful
+- **WARN-NEW results** = Review these findings and plan fixes
+- **FAIL-NEW results** = Critical! Must fix before deployment
+- **INFO results** = Informational only, lower priority
 
 ### Best Practices Checklist
 
@@ -1450,7 +1585,6 @@ on:
 - [ ] Review Security tab weekly
 - [ ] Fix critical/high issues within days
 - [ ] Keep dependencies updated
-- [ ] Don't disable scans to "make builds pass"
 - [ ] Document security decisions
 - [ ] Educate team on findings
 
@@ -1485,6 +1619,7 @@ on:
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 - [GitHub Security Lab](https://securitylab.github.com/)
 - [CodeQL Learning](https://codeql.github.com/learn/)
+- [ZAP User Guide](https://www.zaproxy.org/docs/)
 
 ***
 
@@ -1512,17 +1647,16 @@ on:
 | **Length** | `sca-reports` | `my-security-scan-action-reports-from-job-123` |
 | **Clarity** | `sast-codeql-results` | `artifact1`, `data`, `results` |
 
-### CodeQL vs Other SAST Tools
+### DAST Result Codes
 
-| Aspect | CodeQL | Other SAST |
+| Status | Meaning | Action Required |
 | :-- | :-- | :-- |
-| **Cost** | Free (public repos) | Often paid |
-| **Setup** | No external token | Requires account + API key |
-| **Analysis** | Semantic/structural | Rules-based or ML |
-| **Integration** | Native GitHub | External service |
-| **Speed** | 2-5 minutes | Variable |
-| **False Positives** | 5-8% | 8-15% |
-| **Best for** | Data flow bugs | Quick inline scanning |
+| **PASS** | Security check passed | None - good! |
+| **WARN-NEW** | New warning found | Review and plan fix |
+| **WARN-INPROG** | Existing warning | Continue tracking |
+| **FAIL-NEW** | Critical issue found | Fix immediately |
+| **FAIL-INPROG** | Existing critical issue | Must resolve |
+| **INFO** | Informational finding | Low priority |
 
 ### Workflow Trigger Options
 
@@ -1552,6 +1686,6 @@ on:
 
 ***
 
-**Remember**: Security is a journey, not a destination. Start with these basics and gradually improve your security posture over time! Always use safe artifact naming to avoid unnecessary workflow failures.
+**Remember**: Security is a journey, not a destination. Start with these basics and gradually improve your security posture over time! Use these scans to learn about vulnerabilities and best practices.
 
 <div align="center">⁂</div>
