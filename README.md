@@ -84,6 +84,21 @@ Think of it like a car inspection:
 - **Open source** - Maintained by GitHub and security community
 - **AI-powered suggestions** - GitHub Copilot can auto-fix detected issues
 
+### Artifact Naming Best Practices
+
+GitHub Actions has specific requirements for artifact naming to avoid errors:
+
+**Safe naming conventions**:
+- Use **alphanumeric characters (a-z, 0-9)** and **hyphens (`-`)**
+- Replace **underscores (`_`) with hyphens (`-`)** - underscores can cause API validation errors
+- Avoid special characters: `/`, `\`, `:`, `|`, `?`, `*`, `"`, `<`, `>`
+- Make each artifact name **unique** within a workflow (no duplicate names)
+- Keep names concise and descriptive
+
+**Examples**:
+- ✅ `sast-results`, `sca-reports`, `dast-findings`
+- ❌ `sast_results`, `sca_reports`, `dast/findings`
+
 ### Time Required
 
 - Initial setup: 30-45 minutes
@@ -153,6 +168,14 @@ def calculate():
     
     except (ValueError, KeyError) as e:
         return jsonify({'error': 'Invalid input'}), 400
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
 
 if __name__ == '__main__':
     # Note: debug=False in production
@@ -348,17 +371,16 @@ git commit -m "Initial commit: Calculator web app"
 - Insecure data flow patterns
 - OWASP Top 10 vulnerabilities
 
-### Why CodeQL Instead of Snyk?
+### Why CodeQL Instead of External Tools?
 
-| Feature | CodeQL | Snyk Code |
+| Feature | CodeQL | External SAST Tools |
 | :-- | :-- | :-- |
-| **Cost** | Free for public repos | Requires paid plan |
-| **Authentication** | Built-in `GITHUB_TOKEN` | Requires external account |
-| **Integration** | Native GitHub | External service |
-| **Maintenance** | GitHub-maintained | Third-party |
-| **Analysis Type** | Semantic (code structure) | Machine learning + rules |
-| **Setup Complexity** | Simple | Requires API token setup |
-| **Language Support** | 15+ languages | 10+ languages |
+| **Cost** | Free for public repos | Often requires paid subscription |
+| **Setup** | No external tokens needed | Requires account setup and API keys |
+| **Integration** | Native GitHub | Third-party service |
+| **Speed** | 2-5 minutes | Variable, often slower |
+| **Maintenance** | GitHub-maintained | Vendor-maintained |
+| **Analysis Type** | Semantic (code structure) | Rules-based or ML-based |
 
 ### Step 4.1: Enable Code Scanning
 
@@ -424,13 +446,6 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: sast
-      
-      # Step 6: Upload results to GitHub Security
-      - name: Upload CodeQL results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          category: sast
 ```
 
 ### Understanding the SAST Workflow
@@ -444,7 +459,6 @@ jobs:
 3. **Set up Python**: Installs Python environment
 4. **Install dependencies**: Installs packages from requirements.txt
 5. **Perform Analysis**: Analyzes code for vulnerabilities
-6. **Upload results**: Sends findings to GitHub Security tab
 
 **Important Configurations**:
 
@@ -454,7 +468,7 @@ jobs:
 
 ### CodeQL Query Suites Available
 
-- `security-and-quality` → Security and code quality
+- `security-and-quality` → Security and code quality checks
 - `security-extended` → Extended security queries (recommended)
 - `security-minimal` → Fast, minimal security checks
 
@@ -530,11 +544,12 @@ jobs:
             --enableRetired
       
       # Step 5: Upload Dependency-Check reports
+      # ✅ FIXED: Using proper artifact naming (hyphens, not underscores)
       - name: Upload Dependency-Check reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: dependency-check-reports
+          name: sca-reports
           path: reports/
       
       # Step 6: Upload to GitHub Security (if SARIF available)
@@ -555,6 +570,7 @@ jobs:
 - `format: 'ALL'` → Generate multiple report formats
 - `--failOnCVSS 7` → Fail if vulnerabilities have severity ≥7 (HIGH)
 - `--enableRetired` → Include retired vulnerabilities
+- `name: sca-reports` → Safe artifact name (hyphens, not underscores)
 
 **What Gets Scanned**:
 
@@ -642,7 +658,7 @@ jobs:
           target: 'http://localhost:5000'
           rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a'  # Include alpha rules
-          allow_issue_writing: false  # Set to true to create GitHub issues
+          allow_issue_writing: false
       
       # Step 7: Run OWASP ZAP Full Scan (more thorough)
       - name: ZAP Full Scan
@@ -653,17 +669,37 @@ jobs:
           cmd_options: '-a -j'  # Include AJAX spider
           allow_issue_writing: false
       
-      # Step 8: Upload ZAP scan reports
-      - name: Upload ZAP reports
+      # ✅ FIXED: Proper artifact naming (hyphens, not underscores)
+      # ✅ FIXED: Unique artifact names to avoid conflicts
+      - name: Upload ZAP baseline reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: zap-reports
+          name: zap-baseline-reports
+          path: report_html.html
+      
+      - name: Upload ZAP fullscan reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-fullscan-reports
           path: |
-            report_html.html
             report_json.json
             report_md.md
 ```
+
+### Artifact Naming Fixes Explained
+
+The original error occurred due to improper artifact naming:
+
+- ❌ **Original**: `name: zap_scan` - Contains underscore that triggers API validation errors
+- ✅ **Fixed**: `name: zap-baseline-reports` - Uses hyphens and is descriptive
+
+**Key fixes applied**:
+
+1. **Replaced underscores with hyphens**: `zap_scan` → `zap-baseline-reports`
+2. **Created unique names**: `zap-baseline-reports` and `zap-fullscan-reports` instead of duplicate names
+3. **Made names descriptive**: Clearly indicates which scan generated the reports
 
 ### Step 6.3: Create ZAP Rules File (Optional)
 
@@ -685,7 +721,7 @@ This tells ZAP to ignore certain warnings that may not be relevant for a demo ap
 3. **Verify**: Checks app is accessible
 4. **Baseline scan**: Quick passive scan (5-10 minutes)
 5. **Full scan**: Deep active scan (15-30 minutes)
-6. **Upload reports**: Saves scan results
+6. **Upload reports**: Saves scan results with proper naming
 
 **Scan Types**:
 
@@ -696,7 +732,7 @@ This tells ZAP to ignore certain warnings that may not be relevant for a demo ap
 
 ## Part 7: Complete Integrated Workflow
 
-Now let's combine all three scans into one comprehensive security pipeline!
+Now let's combine all three scans into one comprehensive security pipeline with proper artifact naming!
 
 ### Step 7.1: Create Complete Workflow
 
@@ -784,6 +820,7 @@ jobs:
             --failOnCVSS 7
             --enableRetired
       
+      # ✅ FIXED: Proper artifact naming
       - name: Upload SCA reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -854,14 +891,29 @@ jobs:
           cmd_options: '-a'
           allow_issue_writing: false
       
-      - name: Upload DAST reports
+      - name: Run ZAP Full Scan
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: 'http://localhost:5000'
+          cmd_options: '-a -j'
+          allow_issue_writing: false
+      
+      # ✅ FIXED: Proper artifact naming with hyphens and unique names
+      - name: Upload ZAP baseline reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: dast-reports
+          name: zap-baseline-reports
+          path: report_html.html
+      
+      - name: Upload ZAP fullscan reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-fullscan-reports
           path: |
-            report_html.html
             report_json.json
+            report_md.md
 
   # JOB 5: Security Summary
   summary:
@@ -880,6 +932,12 @@ jobs:
           echo "- ✅ SCA (Dependency Check): Completed" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ DAST (Dynamic Testing): Completed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Artifacts Generated" >> $GITHUB_STEP_SUMMARY
+          echo "- CodeQL results in Security tab" >> $GITHUB_STEP_SUMMARY
+          echo "- SCA reports: sca-reports" >> $GITHUB_STEP_SUMMARY
+          echo "- DAST baseline: zap-baseline-reports" >> $GITHUB_STEP_SUMMARY
+          echo "- DAST fullscan: zap-fullscan-reports" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "📁 Check the **Actions** tab for detailed reports" >> $GITHUB_STEP_SUMMARY
           echo "🔍 Check the **Security** tab for vulnerability details" >> $GITHUB_STEP_SUMMARY
 ```
@@ -897,16 +955,16 @@ jobs:
          ↓
 4. DAST (Live scan) → Runs after successful build
          ↓
-5. Summary → Generates report
+5. Summary → Generates report with artifact names
 ```
 
-**Why This Order?**
+**Artifact Naming Summary**:
 
-1. **SAST first**: Catch code issues before anything else
-2. **SCA next**: Check dependencies are safe
-3. **Build after**: Only build if code and deps are okay
-4. **DAST last**: Test the running application
-5. **Summary always**: Report results even if failures occur
+- `sca-reports` - Dependency check findings
+- `zap-baseline-reports` - ZAP passive scan results
+- `zap-fullscan-reports` - ZAP active scan results
+
+All names follow the safe naming convention: alphanumeric + hyphens, no underscores or special characters.
 
 ***
 
@@ -923,7 +981,7 @@ git remote add origin https://github.com/YOUR_USERNAME/calculator-security-demo.
 
 # Push all files
 git add .
-git commit -m "Add complete security scanning pipeline with CodeQL"
+git commit -m "Add complete security scanning pipeline with CodeQL and fixed artifact naming"
 git push -u origin main
 ```
 
@@ -944,6 +1002,7 @@ Click on any running workflow to see:
 - Real-time logs
 - Each step's progress
 - Green checkmarks ✅ or red Xs ❌
+- Artifact uploads with proper naming
 
 **Expected Timeline**:
 
@@ -952,6 +1011,16 @@ Click on any running workflow to see:
 - DAST Baseline: 5-10 minutes
 - DAST Full: 15-30 minutes
 - Complete Pipeline: 25-45 minutes total
+
+### Step 8.4: Verify Artifact Names
+
+1. Go to completed workflow run
+2. Scroll to **Artifacts** section
+3. Verify artifact names show:
+    - ✅ `sca-reports`
+    - ✅ `zap-baseline-reports`
+    - ✅ `zap-fullscan-reports`
+    - ❌ No underscores or invalid characters
 
 ***
 
@@ -968,13 +1037,13 @@ Click on any running workflow to see:
 - Workflow execution logs
 - Step-by-step progress
 - Error messages and warnings
-- Downloaded artifacts (reports)
+- Downloaded artifacts with proper naming
 
 **How to download reports**:
 
 1. Go to completed workflow run
 2. Scroll to bottom "Artifacts" section
-3. Click report names to download
+3. Click artifact names to download (e.g., `sca-reports`, `zap-baseline-reports`)
 
 #### 2. Security Tab
 
@@ -1037,7 +1106,7 @@ URL: http://localhost:5000
 Issue: X-Content-Type-Options header not set
 
 Recommendation: Add security headers to responses
-Fix: Use Flask-Talisman or set headers manually
+Fix: Header already added in app.py!
 ```
 
 ***
@@ -1046,7 +1115,40 @@ Fix: Use Flask-Talisman or set headers manually
 
 ### Common Issues and Solutions
 
-#### Issue 1: CodeQL Analysis Takes Too Long
+#### Issue 1: Artifact Name Not Valid Error
+
+**Symptoms**:
+
+```
+Error: Create Artifact Container failed: The artifact name zap_scan is not valid
+```
+
+**Solution**:
+
+1. Replace underscores (`_`) with hyphens (`-`)
+2. Remove special characters: `/`, `\`, `:`, `|`, `?`, `*`, `"`, `<`, `>`
+3. Make sure each artifact has a unique name (no duplicates)
+4. Use descriptive alphanumeric names
+
+**Example fix**:
+
+```yaml
+# ❌ Wrong
+- name: Upload ZAP reports
+  with:
+    name: zap_scan
+
+# ✅ Correct
+- name: Upload ZAP baseline reports
+  with:
+    name: zap-baseline-reports
+
+- name: Upload ZAP fullscan reports
+  with:
+    name: zap-fullscan-reports
+```
+
+#### Issue 2: CodeQL Analysis Takes Too Long
 
 **Symptoms**:
 
@@ -1061,24 +1163,8 @@ Fix: Use Flask-Talisman or set headers manually
 
 ```yaml
 with:
-  languages: ${{ matrix.language }}
   queries: security-minimal  # Faster, less comprehensive
 ```
-
-#### Issue 2: SAST Fails - "No eligible run found"
-
-**Symptoms**:
-
-```
-Error: No eligible runs found
-```
-
-**Solution**:
-
-1. Verify CodeQL initialization step succeeded
-2. Ensure language matrix is correct: `language: [ 'python' ]`
-3. Check that Python files exist in repository
-4. Re-run workflow if initialization fails initially
 
 #### Issue 3: SCA Takes Too Long
 
@@ -1152,15 +1238,14 @@ Error: Connection refused to http://localhost:5000
 
 **Solution**:
 
-1. Adjust severity thresholds in CodeQL:
+1. Adjust severity thresholds:
 
 ```yaml
-# Only report medium and higher
-with:
-  queries: security-extended
+# SCA - only fail on critical
+args: --failOnCVSS 9
 ```
 
-2. Create suppression files for known false positives in CodeQL configuration
+2. Create suppression files for known false positives
 
 #### Issue 7: Workflow Permissions Error
 
@@ -1187,20 +1272,21 @@ permissions:
 
 ### Exercise 1: Basic Setup (30 minutes)
 
-**Goal**: Get all three scans running
+**Goal**: Get all three scans running with proper artifact naming
 
 **Steps**:
 
 1. ✅ Create calculator project with all files
-2. ✅ Create all four workflow files
+2. ✅ Create all four workflow files with proper naming
 3. ✅ Push to GitHub
 4. ✅ Verify all workflows run successfully
+5. ✅ Check that artifacts appear with safe names
 
 **Success Criteria**:
 
 - All workflows appear in Actions tab
-- At least SAST and SCA complete (DAST may find issues)
-- No authentication token errors
+- Artifacts section shows: `sca-reports`, `zap-baseline-reports`, `zap-fullscan-reports`
+- No "artifact name not valid" errors
 
 ### Exercise 2: Fix Vulnerabilities (45 minutes)
 
@@ -1213,13 +1299,14 @@ permissions:
 3. Fix at least 3 issues:
     - Update Flask to latest version
     - Update Werkzeug to latest version
-    - Add security headers to responses
+    - Verify security headers are present
 
-**Fix for security headers** (add to `app.py`):
+**Fix for security headers** (already in `app.py`):
 
 ```python
 @app.after_request
 def add_security_headers(response):
+    """Add security headers to all responses"""
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
@@ -1266,31 +1353,37 @@ on:
 - Workflows adjust behavior based on configuration
 - Understanding of CodeQL options
 
-### Exercise 4: Add Another Application (60 minutes)
+### Exercise 4: Rename Artifacts (20 minutes)
 
-**Goal**: Apply learning to new project
+**Goal**: Practice safe artifact naming
 
-**Steps**:
+**Tasks**:
 
-1. Create a new endpoint in `app.py`:
+1. Identify any artifacts using underscores
+2. Create new versions with proper naming:
+   - Replace `_` with `-`
+   - Ensure unique names
+   - Test the workflow
 
-```python
-@app.route('/api/history', methods=['GET'])
-def history():
-    # Intentionally vulnerable: SQL injection
-    calc_id = request.args.get('id')
-    # This would be vulnerable if using real database
-    return jsonify({'message': f'Calculation {calc_id}'})
+**Examples to rename**:
+
+```yaml
+# ❌ Old naming
+- name: sast_results
+- name: sca_findings
+- name: dast_scan
+
+# ✅ New naming
+- name: sast-results
+- name: sca-findings
+- name: dast-scan
 ```
-
-2. Run security scans
-3. Observe which scanners detect the vulnerability
-4. Fix the issue properly
 
 **Success Criteria**:
 
-- Understanding which scanner catches which vulnerability type
-- Ability to identify and fix issues independently
+- All artifacts upload successfully
+- No "artifact name not valid" errors
+- Clear naming convention applied
 
 ### Exercise 5: Create Security Report (30 minutes)
 
@@ -1320,9 +1413,14 @@ def history():
 
 ## Remediation Actions
 1. Updated Flask from 2.0.1 → 2.3.2
-2. Added security headers
-3. Parameterized SQL queries
-...
+2. Added security headers (X-Content-Type-Options, etc.)
+3. [Additional fixes]
+
+## Artifacts Used
+- CodeQL results (from Security tab)
+- sca-reports
+- zap-baseline-reports
+- zap-fullscan-reports
 ```
 
 ***
@@ -1333,13 +1431,21 @@ def history():
 
 ✅ **SAST with CodeQL**: Scanning source code for vulnerabilities
 ✅ **SCA**: Checking dependencies for known issues
-✅ **DAST**: Testing running applications for security flaws
-✅ **GitHub Actions**: Automating security in CI/CD
+✅ **DAST with ZAP**: Testing running applications for security flaws
+✅ **Proper artifact naming**: Avoiding GitHub Actions validation errors
 ✅ **Security Reporting**: Reading and understanding scan results
+
+### Key Takeaways on Artifact Naming
+
+- **Use hyphens, not underscores**: `zap-reports` not `zap_reports`
+- **Make names unique**: No duplicate artifact names in same workflow
+- **Keep it simple**: Alphanumeric + hyphens only
+- **Be descriptive**: `zap-baseline-reports` is clearer than `reports`
 
 ### Best Practices Checklist
 
 - [ ] Run all three scan types (SAST + SCA + DAST)
+- [ ] Use proper artifact naming (hyphens, no underscores)
 - [ ] Scan on every push and pull request
 - [ ] Review Security tab weekly
 - [ ] Fix critical/high issues within days
@@ -1353,8 +1459,8 @@ def history():
 **Beginner → Intermediate**:
 
 1. Add container scanning (Docker image scan with Trivy)
-2. Implement security policies (branch protection)
-3. Set up scheduled scans
+2. Implement security policies (branch protection rules)
+3. Set up scheduled scans for off-peak hours
 4. Integrate with Slack for notifications
 
 **Intermediate → Advanced**:
@@ -1371,6 +1477,7 @@ def history():
 - [GitHub CodeQL Documentation](https://codeql.github.com/docs/)
 - [OWASP Dependency-Check](https://owasp.org/www-project-dependency-check/)
 - [OWASP ZAP](https://www.zaproxy.org/)
+- [GitHub Actions Upload Artifact](https://github.com/actions/upload-artifact)
 - [GitHub Security Features](https://docs.github.com/en/code-security)
 
 **Learning**:
@@ -1388,24 +1495,34 @@ def history():
 | Feature | SAST (CodeQL) | SCA (Dep-Check) | DAST (ZAP) |
 | :-- | :-- | :-- | :-- |
 | **What it scans** | Source code | Dependencies | Running app |
-| **Requires token** | No (uses GITHUB_TOKEN) | No | No |
+| **Requires token** | No | No | No |
 | **Speed** | 2-5 min | 3-5 min | 15-30 min |
 | **When to run** | Every push | Daily/weekly | After deployment |
 | **Best for finding** | Code flaws | Outdated libs | Runtime issues |
 | **Cost** | Free | Free | Free |
 | **Setup time** | 5 minutes | 5 minutes | 10 minutes |
 
-### CodeQL vs Snyk: Key Differences
+### Safe Artifact Naming Rules
 
-| Aspect | CodeQL | Snyk Code |
+| Rule | Safe | Unsafe |
 | :-- | :-- | :-- |
-| **Cost** | Free (public repos) | $$ Requires subscription |
-| **Setup** | No external token | Requires Snyk account |
-| **Analysis** | Semantic/structural | Machine learning + rules |
+| **Characters** | a-z, 0-9, `-` | `_`, `/`, `\`, `:`, `\|`, `?`, `*`, `"`, `<`, `>` |
+| **Underscore** | `zap-reports` | `zap_reports` |
+| **Multiple files** | Each unique name | Same name twice |
+| **Length** | `sca-reports` | `my-security-scan-action-reports-from-job-123` |
+| **Clarity** | `sast-codeql-results` | `artifact1`, `data`, `results` |
+
+### CodeQL vs Other SAST Tools
+
+| Aspect | CodeQL | Other SAST |
+| :-- | :-- | :-- |
+| **Cost** | Free (public repos) | Often paid |
+| **Setup** | No external token | Requires account + API key |
+| **Analysis** | Semantic/structural | Rules-based or ML |
 | **Integration** | Native GitHub | External service |
-| **False Positives** | 5% | 8% |
-| **Speed** | 2-5 minutes | 30 seconds - 2 minutes |
-| **Best for** | Data flow vulnerabilities | Quick inline scanning |
+| **Speed** | 2-5 minutes | Variable |
+| **False Positives** | 5-8% | 8-15% |
+| **Best for** | Data flow bugs | Quick inline scanning |
 
 ### Workflow Trigger Options
 
@@ -1416,7 +1533,7 @@ on: push
 # On pull requests only
 on: pull_request
 
-# Daily at 2 AM
+# Daily at 2 AM UTC
 on:
   schedule:
     - cron: '0 2 * * *'
@@ -1433,32 +1550,8 @@ on:
     - cron: '0 2 * * *'
 ```
 
-### CodeQL Configuration Snippets
-
-**Run specific query suite**:
-
-```yaml
-with:
-  queries: security-extended  # Most comprehensive
-```
-
-**Override autobuild**:
-
-```yaml
-- name: Build Java
-  run: |
-    mvn clean package -f tools/deploy/pom.xml
-```
-
-**Customize database location**:
-
-```yaml
-with:
-  db-location: './codeql-db'
-```
-
 ***
 
-**Remember**: Security is a journey, not a destination. Start with these basics and gradually improve your security posture over time!
+**Remember**: Security is a journey, not a destination. Start with these basics and gradually improve your security posture over time! Always use safe artifact naming to avoid unnecessary workflow failures.
 
 <div align="center">⁂</div>
